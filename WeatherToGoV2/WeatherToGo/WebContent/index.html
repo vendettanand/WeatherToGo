@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Weather To Go</title>
+    <meta name="viewport" content="initial-scale=1.0">
+    <meta charset="utf-8">
+    <style>
+      #map {
+        height: 100%;
+      }
+      html, body {
+        height: 100%;
+        margin: 0;
+        padding: 0;
+      }
+        #infowindow-content {
+        font-weight: bold;
+      }
+        .controls {
+        margin-top: 10px;
+        border: 1px solid transparent;
+        border-radius: 2px 0 0 2px;
+        box-sizing: border-box;
+        -moz-box-sizing: border-box;
+        height: 32px;
+        outline: none;
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+      }
+        #from,
+      #to {
+        background-color: #fff;
+        font-family: Roboto;
+        font-size: 15px;
+        font-weight: 300;
+        margin-left: 12px;
+        padding: 0 11px 0 13px;
+        text-overflow: ellipsis;
+        width: 200px;
+      }
+        #from:focus,
+      #to:focus {
+        border-color: #4d90fe;
+      }
+    .weatherbox {
+        position: absolute;
+        top: 60px;
+        right: 10px;
+        width: 500px;
+        height: 500px;
+        border: 1px solid #e6e6e6;
+        opacity: 1;
+        display: none;
+        text-align: center;
+        background-image: linear-gradient(to bottom, #ff3333, #ff9999, #80bfff);
+    }
+    
+    </style>
+  </head>
+  <body>
+      <input id="from" class="controls" type="text"
+        placeholder="Enter an origin location">
+
+    <input id="to" class="controls" type="text"
+        placeholder="Enter a destination location">
+    <div id="map"></div>
+    <div class="weatherbox" id="box">
+        <h2>WayPoints Weather data</h2>
+      <table id="weathertable" align = "center" cellpadding="10">
+        </table>
+      </div>
+    <script>
+    //Global Variable declaration
+        var directionsDisplay;
+        var map;
+        var from;
+        var to;
+        var markers;
+      function initMap() {
+        markers = [];
+          map = new google.maps.Map(document.getElementById('map'), {
+          mapTypeControl: false,
+          center: {lat: -33.8688, lng: 151.2195},
+          zoom: 13
+        });
+          
+        new AutocompleteDirectionsHandler(map);
+      }
+        //Google's Autocomplete handler
+        function AutocompleteDirectionsHandler(map) {
+        this.map = map;
+        this.originPlaceId = null;
+        this.destinationPlaceId = null;
+        this.travelMode = 'DRIVING';
+        var originInput = document.getElementById('from');
+        var destinationInput = document.getElementById('to');
+        this.directionsService = new google.maps.DirectionsService;
+        this.directionsDisplay = new google.maps.DirectionsRenderer;
+        this.directionsDisplay.setMap(map);
+
+        var originAutocomplete = new google.maps.places.Autocomplete(
+            originInput, {placeIdOnly: true});
+        var destinationAutocomplete = new google.maps.places.Autocomplete(
+            destinationInput, {placeIdOnly: true});
+        this.setupPlaceChangedListener(originAutocomplete, 'ORIG');
+        this.setupPlaceChangedListener(destinationAutocomplete, 'DEST');
+
+        this.map.controls[google.maps.ControlPosition.TOP_LEFT].push(originInput);
+        this.map.controls[google.maps.ControlPosition.TOP_LEFT].push(destinationInput);
+      }
+	//Autocomplete listener
+           AutocompleteDirectionsHandler.prototype.setupPlaceChangedListener = function(autocomplete, mode) {
+        var me = this;
+        autocomplete.bindTo('bounds', this.map);
+        autocomplete.addListener('place_changed', function() {
+          var place = autocomplete.getPlace();
+          if (!place.place_id) {
+            window.alert("Please select an option from the dropdown list.");
+            return;
+          }
+          if (mode === 'ORIG') {
+            me.originPlaceId = place.place_id;
+            from = place.name;
+          } else {
+            me.destinationPlaceId = place.place_id;
+              to = place.name;
+          }
+          me.route();
+        });
+
+      };
+         AutocompleteDirectionsHandler.prototype.route = function() {
+        if (!this.originPlaceId || !this.destinationPlaceId) {
+          return;
+        }
+        else{
+            sendHTTPRequest();
+        }
+      };
+     //Send HTTP request to Web server for directions, Waypoints and Weather data
+    function sendHTTPRequest(){
+        
+        if(directionsDisplay!=null || directionsDisplay!=undefined){
+            directionsDisplay.setMap(null);
+        }
+        var xhttp = new XMLHttpRequest();
+        xhttp.onreadystatechange = function() {
+            if(this.readyState == 4 && this.status==200) {
+                var json = JSON.parse(this.response);
+                if(json=="null")
+                    window.alert("Invalid Input")
+                var result = json.result;
+                var weather = json.weatherList;
+               var directionsService = new google.maps.DirectionsService;
+                var directionsDisplayt = new google.maps.DirectionsRenderer;
+            typecastRoutes(result.routes);
+           var start = document.getElementById(from);
+	       var end = document.getElementById(to);
+	       var request = {
+               origin: start,
+               destination: end,
+               travelMode: "DRIVING",
+               status: "OK"
+           };
+            removeMarkers();
+            addMarkers(weather);
+            getWeather(weather);
+            directionsDisplayt.setMap(map);
+            directionsDisplay = directionsDisplayt;
+            result.request = request;
+            directionsDisplayt.setDirections(result);
+        }
+            };
+        xhttp.open("POST", "http://localhost:8080/WeatherToGo/Controller", true);
+        xhttp.setRequestHeader("Content-type", "application/x-www-form-urlencoded");
+        xhttp.send("from::"+from+"_____to::"+to);
+    }
+  //Remove Markers on map
+        function removeMarkers(){
+            for (var i = 0; i < markers.length; i++) {
+                markers[i].setMap(null);
+            }
+            markers = [];
+        }
+      //Add Markers on map
+        function addMarkers(weatherlist){
+            for (var i = 0; i < weatherlist.length; i++) {
+                var ltlg = JSON.parse(weatherlist[i]);
+                var lat = ltlg.coord.lat;
+                var lng = ltlg.coord.lon;
+                var ul = {lat: lat, lng: lng};
+                var marker = new google.maps.Marker({position: ul, map: map});
+                markers.push(marker);
+            }
+        }
+      //Display Weather on map
+        function getWeather(weatherlist){
+            var table = document.getElementById("weathertable");
+            if(table.rows.length>0){
+                var i = 0;
+                while(i<table.rows.length){
+                    table.deleteRow(i);
+                }
+            }
+            var num = 0;
+            weatherlist.forEach(function(w){
+                var we = JSON.parse(w);
+                var w1 = parseFloat(we.main.temp);
+                var w2 = Math.round(((w1-273.15)*9)/5 +32);
+                var row = table.insertRow(num);
+                var cell = row.insertCell(0);
+                var cell1 = row.insertCell(1);
+                var cell2 = row.insertCell(2);
+                var cell3 = row.insertCell(3);
+                var cell4 = row.insertCell(4);
+                cell.innerHTML = we.name;
+                cell1.innerHTML = we.weather[0].main;
+                str = "http://openweathermap.org/img/w/"+we.weather[0].icon+".png";
+                var img = "<img src = "+"'"+str+"'>";
+                cell2.innerHTML = img;
+                cell3.innerHTML = w2+'F';
+                cell4.innerHTML = we.weather[0].description;
+                ++num;
+            })
+            document.getElementById("box").style.display = "block";
+            num = 0;
+        }
+      // Type cast response object
+        function typecastRoutes(routes){
+            routes.forEach(function(route){
+            route.bounds = asBounds(route.bounds);
+            route.overview_path = asPath(route.overviewPolyline);
+            route.legs.forEach(function(leg){
+            leg.start_location = asLatLng(leg.startLocation);
+            leg.end_location   = asLatLng(leg.endLocation);
+
+            leg.steps.forEach(function(step){
+                step.start_location = asLatLng(step.startLocation);
+                step.end_location   = asLatLng(step.endLocation);
+                step.path = asPath(step.polyline);
+            });
+
+        });
+    });
+}
+
+        function asBounds(boundsObject){
+            return new google.maps.LatLngBounds(asLatLng(boundsObject.southwest), asLatLng(boundsObject.northeast));
+        }
+
+        function asLatLng(latLngObject){
+            return new google.maps.LatLng(latLngObject.lat, latLngObject.lng);
+        }
+
+        function asPath(encodedPolyObject){
+            return google.maps.geometry.encoding.decodePath( encodedPolyObject.points );
+        }
+    </script>
+    <script src="https://maps.googleapis.com/maps/api/js?key=API_KEY&libraries=geometry,places&callback=initMap"
+    async defer></script>
+  </body>
+</html>
